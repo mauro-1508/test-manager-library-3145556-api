@@ -18,4 +18,6 @@ RUN composer dump-autoload --optimize --no-dev \
 
 EXPOSE 8000
 
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+RUN tr -d '\015' < docker/entrypoint.sh > docker/entrypoint.tmp && mv docker/entrypoint.tmp docker/entrypoint.sh
+
+CMD ["sh", "docker/entrypoint.sh"]

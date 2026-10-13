@@ -36,12 +36,26 @@ docker build -t library-api .
 docker run --rm -p 8000:8000 --env-file .env library-api
 ```
 
-The API listens on port 8000.
+The API listens on port 8000. On start, `docker/entrypoint.sh` runs, in order:
+
+1. `php artisan migrate --force` (the database starts empty; the migrations create the schema and seed the categories)
+2. `php artisan library:ensure-admin` (creates the initial admin from `ADMIN_USERNAME` / `ADMIN_PASSWORD` if that username does not exist; the password is never printed; it fails if either variable is missing)
+3. `php artisan serve --host=0.0.0.0 --port=8000`
+
+Required environment variables: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `APP_KEY`, `CORS_ORIGIN`.
 
 ## Run tests
 
 ```bash
-php vendor/bin/pest
+php vendor/bin/pest                          # all suites; integration tests are skipped without a database
+php vendor/bin/pest --testsuite=Unit,Feature # no database needed
 ```
 
-The tests currently available do not need a database.
+Integration tests (`tests/Integration`) run against a real PostgreSQL 16 with the migrations applied. Each test runs in a
+transaction that is rolled back:
+
+```bash
+export DATABASE_URL=postgresql://library:library@localhost:5432/library
+php artisan migrate --force
+php vendor/bin/pest --testsuite=Integration
+```
