@@ -16,6 +16,17 @@ final class UploadCoverRequest extends ApiRequest
         return ['file' => ['required', 'file']];
     }
 
+    protected function prepareForValidation(): void
+    {
+        $contentType = (string) $this->header('Content-Type');
+        if ($this->isMethod('PUT') && $this->file('file') === null && stripos($contentType, 'multipart/form-data') === 0) {
+            $file = MultipartFileExtractor::extract($contentType, $this->getContent(), 'file');
+            if ($file !== null) {
+                $this->files->set('file', $file);
+            }
+        }
+    }
+
     public function bytes(): string
     {
         return (string) file_get_contents($this->file('file')->getRealPath());

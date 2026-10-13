@@ -10,6 +10,7 @@ use App\Domain\Role;
 use App\Domain\User;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 final class PgUserRepository implements UserRepository
 {
@@ -27,7 +28,10 @@ final class PgUserRepository implements UserRepository
                 ['username', 'password_hash', 'role'],
             );
         } catch (QueryException $error) {
-            throw PgErrors::isUniqueViolation($error) ? new UsernameTaken() : $error;
+            // The original exception carries the bindings (password hash), so it is never rethrown.
+            throw PgErrors::isUniqueViolation($error)
+                ? new UsernameTaken()
+                : new RuntimeException('The user could not be saved.');
         }
     }
 

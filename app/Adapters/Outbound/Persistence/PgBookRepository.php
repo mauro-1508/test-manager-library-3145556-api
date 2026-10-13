@@ -9,6 +9,7 @@ use App\Application\Dto\PageRequest;
 use App\Application\Errors\IsbnTaken;
 use App\Application\Ports\Outbound\BookRepository;
 use App\Domain\Book;
+use App\Domain\DomainValidationError;
 use App\Domain\Isbn;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Database\QueryException;
@@ -19,24 +20,46 @@ final class PgBookRepository implements BookRepository
     public function save(Book $book): void
     {
         try {
-            DB::table('library.book')->upsert(
-                [[
+            if ($this->updateExisting($book) === 0) {
+                DB::table('library.book')->insert($this->columns($book) + [
                     'id' => $book->id,
-                    'title' => $book->title(),
-                    'author' => $book->author(),
-                    'isbn' => $book->isbn->value,
-                    'category_id' => $book->categoryId(),
-                    'total_copies' => $book->totalCopies(),
                     'available_copies' => $book->availableCopies(),
-                    'cover_key' => $book->coverKey(),
-                    'deleted_at' => $book->deletedAt() === null ? null : PgTime::toDb($book->deletedAt()),
-                ]],
-                ['id'],
-                ['title', 'author', 'isbn', 'category_id', 'total_copies', 'available_copies', 'cover_key', 'deleted_at'],
-            );
+                ]);
+            }
         } catch (QueryException $error) {
-            throw PgErrors::isUniqueViolation($error) ? new IsbnTaken() : $error;
+            throw match (true) {
+                PgErrors::isUniqueViolation($error) => new IsbnTaken(),
+                PgErrors::isCheckViolation($error) => new DomainValidationError('El nuevo total deja los ejemplares disponibles por debajo de cero.'),
+                default => $error,
+            };
         }
+    }
+
+    /**
+     * Updates an existing row. available_copies is never overwritten with the value read earlier:
+     * it only moves by the change in total, computed atomically in SQL, so a concurrent loan is not lost.
+     */
+    private function updateExisting(Book $book): int
+    {
+        return DB::table('library.book')->where('id', $book->id)->update($this->columns($book) + [
+            'available_copies' => DB::raw('available_copies + (' . (int) $book->totalCopies() . ' - total_copies)'),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function columns(Book $book): array
+    {
+        return [
+            'title' => $book->title(),
+            'author' => $book->author(),
+            'isbn' => $book->isbn->value,
+            'category_id' => $book->categoryId(),
+            'total_copies' => $book->totalCopies(),
+            'cover_key' => $book->coverKey(),
+            'deleted_at' => $book->deletedAt() === null ? null : PgTime::toDb($book->deletedAt()),
+        ];
     }
 
     public function findActive(string $id): ?Book
